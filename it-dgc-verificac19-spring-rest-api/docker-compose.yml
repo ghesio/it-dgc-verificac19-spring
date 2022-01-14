@@ -1,0 +1,11 @@
+version: "3.7"
+services:
+    c19:
+        container_name: c19
+        build:
+            context: .
+            dockerfile: Dockerfile
+        ports:
+            - "${SERVER_PORT}:${SERVER_PORT}"
+        environment:
+            - server_port=${SERVER_PORT}

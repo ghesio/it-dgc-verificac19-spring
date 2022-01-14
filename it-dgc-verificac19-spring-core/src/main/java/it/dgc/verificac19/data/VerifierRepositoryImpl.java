@@ -192,7 +192,7 @@ public class VerifierRepositoryImpl implements VerifierRepository {
       String responseString = response.body().string();
 
       if (validCertList.contains(responseKid)) {
-        LOG.info("Cert KID verified {}", responseKid);
+        LOG.debug("Cert KID verified {}", responseKid);
         Key key = new Key(responseKid, responseString);
         keyDao.saveAndFlush(key);
         preferences.setResumeToken(resumeToken);

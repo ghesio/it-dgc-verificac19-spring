@@ -38,10 +38,12 @@ public class LoadKeysWorker {
   public void doWork() {
     LOG.info("key fetching start");
     boolean res = verifierRepository.syncData();
-    LOG.info("key fetching result: {}", res);
+    LOG.debug("key fetching result: {}", res);
     if (!res) {
       throw new RuntimeException("Error on sync data, retry");
     }
+    LOG.info("key fetching end");
+
   }
 
   @EventListener(ApplicationReadyEvent.class)
