@@ -269,7 +269,7 @@ public class VerifierRepositoryImpl implements VerifierRepository {
   }
 
   private boolean outDatedVersion(CrlStatus crlStatus) {
-    return (crlStatus.getVersion() != preferences.getCurrentVersion());
+    return (!crlStatus.getVersion().equals(preferences.getCurrentVersion()));
   }
 
   private long getCurrentVersionDrl() {
@@ -423,7 +423,7 @@ public class VerifierRepositoryImpl implements VerifierRepository {
   }
 
   private void getRevokeList(Long version, CertificateRevocationList certificateRevocationList) {
-    if (version == certificateRevocationList.getVersion()) {
+    if (version.equals(certificateRevocationList.getVersion())) {
       preferences.setCurrentChunk(preferences.getCurrentChunk() + 1);
       boolean isFirstChunk = preferences.getCurrentChunk() == 1;
       if (isFirstChunk && certificateRevocationList.getDelta() == null) {
