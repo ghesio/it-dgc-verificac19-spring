@@ -5,6 +5,7 @@
 # Indice
 - [Contesto](#contesto)
 - [Installazione](#installazione)
+- [Aggiornamenti](#aggiornamenti)
 - [Uso](#uso)
 - [Licenza](#licenza)
   - [Dettaglio licenza](#dettaglio-licenza)
@@ -38,6 +39,55 @@ Il codice sorgente è suddiviso nei due seguenti moduli maven.
 
 ###   
 
+# Aggiornamenti
+L'aggiornamento dei dati: regole di validazione, certificati di firma e DGC revocati avviene mediante un cron schedulato quotidianamente
+
+```
+  @Retryable(maxAttempts = Integer.MAX_VALUE)
+  @Scheduled(cron = "@daily")
+  public void doWork() {
+    LOG.info("key fetching start");
+    boolean res = verifierRepository.syncData();
+    LOG.info("key fetching result: {}", res);
+    if (!res) {
+      throw new RuntimeException("Error on sync data, retry");
+    }
+  }
+  
+  @Override
+  public boolean syncData() {
+    try {
+      if (fetchValidationRules() == false || fetchCertificates() == false) {
+        return false;
+      }
+    } catch (IOException | RuntimeException e) {
+      LOG.error("Fetch validation rules / certificates error", e);
+      return false;
+    }
+
+    if (preferences.isDrlSyncActive()) {
+      getCRLStatus();
+    }
+
+    preferences.setDateLastFetch(LocalDateTime.now());
+    return true;
+  }
+  
+  In sintesi:
+  //aggiorna le regole di validazione
+  fetchValidationRules()
+  
+  //aggiorna lo status e la lista dei certificati
+  fetchCertificates()
+  
+  //aggiorna le liste di revoca
+  getCRLStatus()
+  
+  ```
+La verifica della DRL viene implementata come uno step opzionale del processo ed è guidato da un apposito configuration item propagato tramite la Piattaforma Nazionale.
+Per ottimizzare il traffico di rete, le DRL non vengono trasferite sottoforma di SNAPSHOT complete (ad eccezione del primo avvio), tipicamente sono rappresentate da DIFF partizionate in CHUNK.
+Per garantire la corretta persistenza della DRL Revocation List sono stati introdotti controlli di congruenza per assicurare che l'esito della costruzione dell nuova DRL abbia avuto l'esito sperato.
+
 # Uso
 
 Esempio:  
@@ -61,8 +111,15 @@ Il data model contiene i dati relativi alla
 persona, la data di nascita, il timestamp di verifica e lo stato della
 verifica. 
 
-Tipologia base (NORMAL_DGP): l'sdk considera valide le certificazioni verdi generate da vaccinazione, da guarigione, da tampone.
-Tipologia rafforzata (SUPER_DGP): l'sdk considera valide solo le certificazioni verdi generate da vaccinazione o da guarigione.
+Tipologia Base (NORMAL_DGP): l'sdk considera valide le certificazioni verdi generate da vaccinazione, da guarigione, da tampone.
+
+Tipologia Rafforzata (SUPER_DGP): l'sdk considera valide solo le certificazioni verdi generate da vaccinazione o da guarigione.
+
+Tipologia Booster (BOOSTER_DGP): l'sdk considera valide solo le certificazioni verdi rilasciate a seguito della somministrazione di una dose di richiamo (booster) e quelle rilasciate al completamento del ciclo vaccinale o guarigione, richiedendo per queste ultime una ulteriore validazione di un tampone (esito negativo di un test al SARS-CoV-2 eseguito nelle 48 ore precedenti).
+
+Tipologia lavoro (WORK): per l'accesso ai luoghi di lavoro dal 15 febbraio, fino ai 49 anni di età l'sdk considera valide le certificazioni verdi generate da vaccinazione, da guarigione o da tampone. Dai 50 anni compiuti in su, considera valide solo le certificazioni verdi generate da vaccinazione o da guarigione. L'sdk considera comunque valide le certificazioni di esenzione dalla vaccinazione.
+
+Tipologia Ingresso IT (ENTRY_ITALY) = per l'ingresso in Italia dall'estero: l'sdk considera valide tutte le tipologie di certificazione verde COVID-19 (vaccinazione, guarigione o tampone) secondo le regole di validazione europee per la circolazione tra gli Stati Membri. Sulla base del tipo di vaccino o ciclo completato da più di 180gg e fino a 270gg può richiedere la contestuale presentazione di un esito negativo di un test al SARS-CoV-2 eseguito nelle 48 ore precedenti.
 
 Basandosi su questi dati &egrave; possibile disegnare la UI e fornire all'operatore lo
 stato della verifica del DGC.
