@@ -269,7 +269,8 @@ public class VerifierRepositoryImpl implements VerifierRepository {
   }
 
   private boolean outDatedVersion(CrlStatus crlStatus) {
-    return (!crlStatus.getVersion().equals(preferences.getCurrentVersion()));
+    LOG.info("Remote version DRL: {}", crlStatus.getVersion().intValue());
+    return (crlStatus.getVersion().intValue() != preferences.getCurrentVersion().intValue());
   }
 
   private long getCurrentVersionDrl() {
@@ -281,22 +282,17 @@ public class VerifierRepositoryImpl implements VerifierRepository {
     }
   }
 
-  private void saveLastFetchDate() {
-    preferences.setDrlDateLastFetch(LocalDateTime.now());
-  }
+
 
   private boolean isDownloadCompleted() {
     return preferences.getTotalNumberUCVI() == revokedPassesSize;
   }
 
   private void manageFinalReconciliation() {
-    saveLastFetchDate();
     checkCurrentDownloadSize();
     if (!isDownloadCompleted()) {
-      LOG.info("Reconciliation", "final reconciliation failed!");
+      LOG.info("Reconciliation, final reconciliation failed!");
       handleErrorState();
-    } else {
-      LOG.info("Reconciliation", "final reconciliation completed!");
     }
   }
 
@@ -333,7 +329,7 @@ public class VerifierRepositoryImpl implements VerifierRepository {
 
       long version = getCurrentVersionDrl();
       preferences.setCurrentVersion(version);
-      LOG.info("Version DRL: {} ", version);
+      LOG.info("Local Version DRL: {} ", version);
 
       Call<CrlStatus> call =
           apiServiceClient.getApiCertificate().getCRLStatus(preferences.getCurrentVersion());
@@ -344,8 +340,10 @@ public class VerifierRepositoryImpl implements VerifierRepository {
           saveCrlStatusInfo(crlStatus);
 
           if (outDatedVersion(crlStatus)) {
+            LOG.info("Local Version DRL is out of date.");
             downloadChunks(crlStatus);
           } else {
+            LOG.info("Local Version DRL is up of date.");
             manageFinalReconciliation();
           }
         }
@@ -368,6 +366,11 @@ public class VerifierRepositoryImpl implements VerifierRepository {
   private void downloadChunks(CrlStatus crlStatus) {
     if (crlStatus != null) {
 
+      LOG.info(":::DRL VERSION UPDATED::: START");
+
+      preferences.setDownloadInProgress(true);
+
+      LOG.info("DownloadChunks: #{} chunk processing.", crlStatus.getTotalChunk());
       while (noMoreChunks(crlStatus)) {
         try {
           LOG.info("downloadChunks: {}", preferences.getCurrentChunk() + 1);
@@ -404,9 +407,12 @@ public class VerifierRepositoryImpl implements VerifierRepository {
 
         saveDrlStatusInDB(crlStatus);
         getCRLStatus();
-
-        LOG.info("DownloadChunks: Last chunk processed, versions updated.");
       }
+
+      LOG.info(":::DRL VERSION UPDATED::: STOP");
+
+      preferences.setDownloadInProgress(false);
+
     }
   }
 
@@ -416,6 +422,9 @@ public class VerifierRepositoryImpl implements VerifierRepository {
     // persist new drl
     Drl drl = new Drl(crlStatus.getId(), crlStatus.getVersion());
     drlDao.save(drl);
+
+    LOG.info("Save DRL status in DB: id [{}], version [{}]", crlStatus.getId(),
+        crlStatus.getVersion());
   }
 
   private boolean isDownloadComplete(CrlStatus crlStatus) {
@@ -423,7 +432,7 @@ public class VerifierRepositoryImpl implements VerifierRepository {
   }
 
   private void getRevokeList(Long version, CertificateRevocationList certificateRevocationList) {
-    if (version.equals(certificateRevocationList.getVersion())) {
+    if (version.intValue() == certificateRevocationList.getVersion().intValue()) {
       preferences.setCurrentChunk(preferences.getCurrentChunk() + 1);
       boolean isFirstChunk = preferences.getCurrentChunk() == 1;
       if (isFirstChunk && certificateRevocationList.getDelta() == null) {
@@ -476,7 +485,7 @@ public class VerifierRepositoryImpl implements VerifierRepository {
 
   private boolean noMoreChunks(CrlStatus status) {
 
-    return preferences.getCurrentChunk() < status.getTotalChunk();
+    return preferences.getCurrentChunk() < status.getTotalChunk().intValue();
   }
 
   private void insertListToDB(List<String> deltaInsertList) {
@@ -499,8 +508,13 @@ public class VerifierRepositoryImpl implements VerifierRepository {
   private void deleteListFromDB(List<String> deltaDeleteList) {
 
     try {
-
-      revokedPassDao.deleteAllByHashedUVCIIn(deltaDeleteList);
+      List<String> subList = null;
+      int num = (int) Math.ceil((deltaDeleteList.size() / 1000d));
+      for (int i = 0; i < num; i++) {
+        subList = new ArrayList<String>(
+            deltaDeleteList.subList(i * 1000, Math.min((i + 1) * 1000, deltaDeleteList.size())));
+        revokedPassDao.deleteAllByHashedUVCIIn(subList);
+      }
       LOG.info("Revoke deleted count: " + deltaDeleteList.size());
 
     } catch (Exception e) {
